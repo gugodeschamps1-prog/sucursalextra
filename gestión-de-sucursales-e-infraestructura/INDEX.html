@@ -2129,11 +2129,11 @@
 
                 async reloadSqliteDatabase() {
                     await this.initSqliteDatabase(true);
-                }
-            };
+                },
 
-            // ============================================================
-            // UI MANAGER
+                getDefaultData() {
+                    return {
+                        zones: [
                             { id: 'z1', name: 'Zona Norte', color: '#4CAF50' },
                             { id: 'z2', name: 'Zona Sur-Este', color: '#2196F3' },
                             { id: 'z3', name: 'Zona Sur-Oeste', color: '#FF9800' },
