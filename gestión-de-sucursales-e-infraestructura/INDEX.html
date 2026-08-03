@@ -15,7 +15,6 @@
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
     </script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
     <style>
         /* ===== ROOT VARIABLES ===== */
         :root {
@@ -986,7 +985,7 @@
         body.dark-mode .services-accordion .accordion-body {
             background: #1e1e1e;
         }
-    </script>
+    </style>
 </head>
 <body>
     <script>
@@ -1387,25 +1386,32 @@
                     </div>
                     <div class="col-lg-6">
                         <div class="stat-card">
-                            <h5 class="fw-bold mb-3"><i class="fas fa-database me-2"></i>Base de Datos SQLite (local)</h5>
+                            <h5 class="fw-bold mb-3"><i class="fas fa-file-csv me-2"></i>Base de Datos CSV (local)</h5>
                             <p class="text-muted" style="font-size:14px;">
-                                Si existe un archivo <code>sucursales.db</code> en la carpeta del proyecto, se cargará automáticamente.
-                                Si no existe, se creará una base de datos nueva de forma automática y se usará el almacenamiento local del navegador.
+                                Vincula un archivo <code>.csv</code> en la carpeta del proyecto para usarlo como base de datos:
+                                la app lo leerá y actualizará automáticamente mientras el archivo permanezca en esa ruta.
                             </p>
-                            <div class="mb-3" id="dbStatus">
-                                <span class="text-muted"><i class="fas fa-database me-1"></i>Cargando estado de la base de datos SQLite...</span>
+                            <div class="mb-3" id="csvStatus">
+                                <span class="text-muted"><i class="fas fa-unlink me-1"></i>Ningún archivo CSV vinculado todavía.</span>
                             </div>
                             <div class="d-flex gap-2 flex-wrap">
-                                <button class="btn btn-primary btn-sm" onclick="window.reloadSqliteDatabase()">
-                                    <i class="fas fa-sync me-1"></i> Recargar DB SQLite
+                                <button class="btn btn-primary btn-sm" onclick="window.linkCsvFile()">
+                                    <i class="fas fa-link me-1"></i> Vincular archivo CSV
                                 </button>
-                                <button class="btn btn-outline-secondary btn-sm" onclick="window.exportSqliteDb()">
-                                    <i class="fas fa-download me-1"></i> Exportar DB
+                                <button class="btn btn-outline-primary btn-sm" onclick="window.syncFromCsvNow()">
+                                    <i class="fas fa-sync me-1"></i> Releer CSV ahora
                                 </button>
-                                <button class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('importDbFile').click();">
-                                    <i class="fas fa-upload me-1"></i> Importar DB
+                            </div>
+                            <hr>
+                            <h6 class="fw-bold"><i class="fas fa-file-export me-2"></i>Alternativa manual (todo navegador)</h6>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <button class="btn btn-outline-secondary btn-sm" onclick="window.exportBranchesCSV()">
+                                    <i class="fas fa-download me-1"></i> Exportar CSV
                                 </button>
-                                <input type="file" id="importDbFile" accept=".db" style="display:none;" onchange="window.importSqliteDb(event)">
+                                <button class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('importCsvFile').click();">
+                                    <i class="fas fa-upload me-1"></i> Importar CSV
+                                </button>
+                                <input type="file" id="importCsvFile" accept=".csv" style="display:none;" onchange="window.importBranchesCSV(event)">
                             </div>
                         </div>
                     </div>
@@ -1824,27 +1830,30 @@
             const SERVICE_KEYS = ['backups', 'externalDisk', 'dataReduction', 'emailValidation', 'ftp', 's3',
                 'voxelLog', 'failOver', 'voxel', 'updateBox', 'bkConsecutivo'
             ];
+            const CSV_FIXED_COLUMNS = [
+                'id', 'branchId', 'name', 'provinceId', 'server', 'cc', 'ip', 'db',
+                'backups', 'externalDisk', 'dataReduction', 'emailValidation', 'ftp', 's3',
+                'voxelLog', 'failOver', 'voxel', 'updateBox', 'bkConsecutivo', 'status', 'createdAt'
+            ];
             const SESSION_FILTERS_KEY = 'fexBranchFilters';
-            const SQLITE_DB_FILE = 'sucursales.db';
-            const SQLITE_LOCAL_BACKUP_KEY = 'fexPharmacySqliteBackup';
 
             // ============================================================
             // DATA MANAGER
             // ============================================================
             const DataManager = {
-                db: null,
-                sql: null,
-                dbReady: false,
-                sqliteSyncTimeout: null,
-
                 getData() {
-                    if (this.cachedData) return this.cachedData;
                     try {
                         const raw = localStorage.getItem(STORE_KEY);
                         if (raw) {
                             const data = JSON.parse(raw);
-                            this.normalizeData(data);
-                            this.cachedData = data;
+                            if (!data.zones) data.zones = [];
+                            if (!data.provinces) data.provinces = [];
+                            if (!data.branches) data.branches = [];
+                            if (!data.customColumns) data.customColumns = [];
+                            if (!data.columnSettings) data.columnSettings = {};
+                            if (!data.columnSettings.order) data.columnSettings.order = DEFAULT_COLUMN_DEFS.map(c => c
+                            .key);
+                            if (!data.activityLog) data.activityLog = [];
                             return data;
                         }
                     } catch (e) { console.error('Error loading data', e); }
@@ -1853,282 +1862,9 @@
                     return def;
                 },
 
-                normalizeData(data) {
-                    if (!data.zones) data.zones = [];
-                    if (!data.provinces) data.provinces = [];
-                    if (!data.branches) data.branches = [];
-                    if (!data.customColumns) data.customColumns = [];
-                    if (!data.columnSettings) data.columnSettings = {};
-                    if (!data.columnSettings.order) data.columnSettings.order = DEFAULT_COLUMN_DEFS.map(c => c.key);
-                    if (!data.activityLog) data.activityLog = [];
-                    data.branches = data.branches.map(b => ({ custom: {}, ...b, custom: b.custom || {} }));
-                    return data;
-                },
-
-                loadDataFromLocalStorage() {
-                    try {
-                        const raw = localStorage.getItem(STORE_KEY);
-                        if (raw) {
-                            const data = JSON.parse(raw);
-                            this.normalizeData(data);
-                            return data;
-                        }
-                    } catch (e) { console.error('Error loading localStorage data', e); }
-                    return null;
-                },
-
-                saveData(data, opts = { persistSql: true }) {
-                    this.normalizeData(data);
-                    this.cachedData = data;
+                saveData(data) {
                     localStorage.setItem(STORE_KEY, JSON.stringify(data));
-                    if (opts.persistSql) this.persistSqlite(data);
-                },
-
-                persistSqlite(data) {
-                    if (!this.dbReady || !this.db) return;
-                    try {
-                        this.saveDataToSqlite(data);
-                        this.saveSqliteBackup();
-                    } catch (err) {
-                        console.error('No se pudo persistir SQLite:', err);
-                    }
-                },
-
-                saveSqliteBackup() {
-                    if (!this.db) return;
-                    try {
-                        const bytes = this.db.export();
-                        const base64 = this.uint8ArrayToBase64(bytes);
-                        localStorage.setItem(SQLITE_LOCAL_BACKUP_KEY, base64);
-                    } catch (err) {
-                        console.error('No se pudo guardar backup SQLite:', err);
-                    }
-                },
-
-                uint8ArrayToBase64(bytes) {
-                    let binary = '';
-                    const chunkSize = 0x8000;
-                    for (let i = 0; i < bytes.length; i += chunkSize) {
-                        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
-                    }
-                    return window.btoa(binary);
-                },
-
-                base64ToUint8Array(base64) {
-                    const binary = window.atob(base64);
-                    const bytes = new Uint8Array(binary.length);
-                    for (let i = 0; i < binary.length; i++) {
-                        bytes[i] = binary.charCodeAt(i);
-                    }
-                    return bytes;
-                },
-
-                async initSqliteDatabase(forceReload = false) {
-                    if (this.dbReady && !forceReload) return;
-                    if (!window.initSqlJs) {
-                        console.error('SQL.js no está disponible.');
-                        return;
-                    }
-
-                    if (!this.sql) {
-                        this.sql = await window.initSqlJs({
-                            locateFile: () => 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.wasm'
-                        });
-                    }
-
-                    let buffer = null;
-                    if (!forceReload) {
-                        try {
-                            const response = await fetch('./' + SQLITE_DB_FILE, { cache: 'no-store' });
-                            if (response.ok) {
-                                buffer = await response.arrayBuffer();
-                            }
-                        } catch (err) {
-                            console.warn('No se pudo cargar sucursales.db desde la ruta del proyecto:', err);
-                        }
-                    }
-
-                    if (!buffer) {
-                        const backup = localStorage.getItem(SQLITE_LOCAL_BACKUP_KEY);
-                        if (backup) {
-                            try {
-                                buffer = this.base64ToUint8Array(backup).buffer;
-                            } catch (err) {
-                                console.error('Error leyendo backup SQLite local:', err);
-                            }
-                        }
-                    }
-
-                    try {
-                        if (buffer) {
-                            this.db = new this.sql.Database(new Uint8Array(buffer));
-                        } else {
-                            this.db = new this.sql.Database();
-                        }
-                    } catch (err) {
-                        console.warn('No se pudo abrir la base de datos SQLite, creando una nueva:', err);
-                        this.db = new this.sql.Database();
-                    }
-
-                    this.ensureSqliteSchema();
-                    const dataFromDb = this.loadDataFromSqliteDb();
-                    if (dataFromDb && dataFromDb.branches.length) {
-                        this.saveData(dataFromDb, { persistSql: false });
-                    } else {
-                        const localData = this.loadDataFromLocalStorage();
-                        if (localData) {
-                            this.saveDataToSqlite(localData);
-                            this.saveSqliteBackup();
-                        } else {
-                            const def = this.getDefaultData();
-                            this.saveDataToSqlite(def);
-                            this.saveSqliteBackup();
-                            this.saveData(def, { persistSql: false });
-                        }
-                    }
-
-                    this.dbReady = true;
-                    if (typeof UIManager !== 'undefined' && UIManager.updateDbStatusUI) {
-                        UIManager.updateDbStatusUI();
-                    }
-                },
-
-                ensureSqliteSchema() {
-                    const schema = [
-                        `CREATE TABLE IF NOT EXISTS zones (id TEXT PRIMARY KEY, name TEXT, color TEXT);`,
-                        `CREATE TABLE IF NOT EXISTS provinces (id TEXT PRIMARY KEY, name TEXT, zoneId TEXT);`,
-                        `CREATE TABLE IF NOT EXISTS branches (id TEXT PRIMARY KEY, branchId TEXT, name TEXT, provinceId TEXT, server TEXT, cc TEXT, ip TEXT, db TEXT, backups TEXT, externalDisk TEXT, dataReduction TEXT, emailValidation TEXT, ftp TEXT, s3 TEXT, voxelLog TEXT, failOver TEXT, voxel TEXT, updateBox TEXT, bkConsecutivo TEXT, status TEXT, createdAt TEXT, custom TEXT);`,
-                        `CREATE TABLE IF NOT EXISTS custom_columns (id TEXT PRIMARY KEY, name TEXT, defaultValue TEXT);`,
-                        `CREATE TABLE IF NOT EXISTS column_settings (id INTEGER PRIMARY KEY, payload TEXT);`,
-                        `CREATE TABLE IF NOT EXISTS activity_log (timestamp TEXT PRIMARY KEY, action TEXT, detail TEXT);`
-                    ];
-                    schema.forEach(stmt => this.db.run(stmt));
-                },
-
-                getRows(sql) {
-                    const result = this.db.exec(sql);
-                    if (!result || !result[0]) return [];
-                    const cols = result[0].columns;
-                    return result[0].values.map(row => {
-                        const obj = {};
-                        row.forEach((value, index) => {
-                            obj[cols[index]] = value;
-                        });
-                        return obj;
-                    });
-                },
-
-                loadDataFromSqliteDb() {
-                    try {
-                        const zones = this.getRows('SELECT id, name, color FROM zones;');
-                        const provinces = this.getRows('SELECT id, name, zoneId FROM provinces;');
-                        const branches = this.getRows('SELECT id, branchId, name, provinceId, server, cc, ip, db, backups, externalDisk, dataReduction, emailValidation, ftp, s3, voxelLog, failOver, voxel, updateBox, bkConsecutivo, status, createdAt, custom FROM branches;')
-                            .map(b => ({ ...b, custom: b.custom ? JSON.parse(b.custom) : {} }));
-                        const customColumns = this.getRows('SELECT id, name, defaultValue FROM custom_columns;');
-                        const settingsRow = this.getRows('SELECT payload FROM column_settings LIMIT 1;')[0];
-                        const columnSettings = settingsRow ? JSON.parse(settingsRow.payload) : { order: DEFAULT_COLUMN_DEFS.map(c => c.key) };
-                        const activityLog = this.getRows('SELECT timestamp, action, detail FROM activity_log ORDER BY timestamp DESC;');
-                        return {
-                            zones,
-                            provinces,
-                            branches,
-                            customColumns,
-                            columnSettings,
-                            activityLog
-                        };
-                    } catch (err) {
-                        console.error('Error leyendo datos desde SQLite:', err);
-                        return null;
-                    }
-                },
-
-                saveDataToSqlite(data) {
-                    if (!this.db) return;
-                    this.db.run('BEGIN;');
-                    this.db.run('DELETE FROM zones;');
-                    const zoneStmt = this.db.prepare('INSERT INTO zones VALUES (?, ?, ?);');
-                    data.zones.forEach(z => zoneStmt.run([z.id, z.name, z.color]));
-                    zoneStmt.free();
-
-                    this.db.run('DELETE FROM provinces;');
-                    const provinceStmt = this.db.prepare('INSERT INTO provinces VALUES (?, ?, ?);');
-                    data.provinces.forEach(p => provinceStmt.run([p.id, p.name, p.zoneId]));
-                    provinceStmt.free();
-
-                    this.db.run('DELETE FROM branches;');
-                    const branchStmt = this.db.prepare(`INSERT INTO branches VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`);
-                    data.branches.forEach(b => {
-                        branchStmt.run([
-                            b.id,
-                            b.branchId || '',
-                            b.name || '',
-                            b.provinceId || '',
-                            b.server || '',
-                            b.cc || '',
-                            b.ip || '',
-                            b.db || '',
-                            b.backups || '',
-                            b.externalDisk || '',
-                            b.dataReduction || '',
-                            b.emailValidation || '',
-                            b.ftp || '',
-                            b.s3 || '',
-                            b.voxelLog || '',
-                            b.failOver || '',
-                            b.voxel || '',
-                            b.updateBox || '',
-                            b.bkConsecutivo || '',
-                            b.status || '',
-                            b.createdAt || '',
-                            JSON.stringify(b.custom || {})
-                        ]);
-                    });
-                    branchStmt.free();
-
-                    this.db.run('DELETE FROM custom_columns;');
-                    const colStmt = this.db.prepare('INSERT INTO custom_columns VALUES (?, ?, ?);');
-                    data.customColumns.forEach(c => colStmt.run([c.id, c.name, c.defaultValue || '']));
-                    colStmt.free();
-
-                    this.db.run('DELETE FROM column_settings;');
-                    const settingsStmt = this.db.prepare('INSERT INTO column_settings VALUES (?, ?);');
-                    settingsStmt.run([1, JSON.stringify(data.columnSettings || { order: DEFAULT_COLUMN_DEFS.map(c => c.key) })]);
-                    settingsStmt.free();
-
-                    this.db.run('DELETE FROM activity_log;');
-                    const auditStmt = this.db.prepare('INSERT INTO activity_log VALUES (?, ?, ?);');
-                    (data.activityLog || []).forEach(log => auditStmt.run([log.timestamp, log.action, log.detail]));
-                    auditStmt.free();
-                    this.db.run('COMMIT;');
-                },
-
-                exportSqliteDatabase() {
-                    if (!this.db) return null;
-                    return this.db.export();
-                },
-
-                importSqliteDatabase(buffer) {
-                    try {
-                        this.db = new this.sql.Database(new Uint8Array(buffer));
-                        this.ensureSqliteSchema();
-                        const dataFromDb = this.loadDataFromSqliteDb();
-                        if (dataFromDb) {
-                            this.saveData(dataFromDb, { persistSql: false });
-                            this.saveSqliteBackup();
-                            this.dbReady = true;
-                            if (typeof UIManager !== 'undefined' && UIManager.updateDbStatusUI) {
-                                UIManager.updateDbStatusUI();
-                            }
-                            return true;
-                        }
-                    } catch (err) {
-                        console.error('Error importando base SQLite:', err);
-                    }
-                    return false;
-                },
-
-                async reloadSqliteDatabase() {
-                    await this.initSqliteDatabase(true);
+                    this.syncCsvFileIfLinked(data);
                 },
 
                 getDefaultData() {
@@ -2152,6 +1888,7 @@
                             { id: 'p11', name: 'San Cristobal', zoneId: 'z3' },
                         ],
                         branches: [
+                            // ... datos iniciales (se mantienen igual que en el original)
                             { id: 'b1', branchId: '3', name: 'Centro Historico', provinceId: 'p1', server: 'ST-CEHIST-SV-PS',
                                 cc: '3', ip: '192.168.22.204', db: 'FEXPharmacySoftRDPtoVtaSuc3', backups: 'SI',
                                 externalDisk: 'SI', dataReduction: 'SI', emailValidation: 'SI', ftp: 'SI', s3: 'SI',
@@ -2177,6 +1914,7 @@
                                 externalDisk: 'SI', dataReduction: 'SI', emailValidation: 'SI', ftp: 'SI', s3: 'SI',
                                 voxelLog: 'SI', failOver: 'SI', voxel: 'SI', updateBox: 'SI', bkConsecutivo: 'NO',
                                 status: 'active', custom: {}, createdAt: '2025-01-25T10:00:00.000Z' },
+                            // ... se incluyen solo algunos para ejemplo, el resto se añadirá en el código final
                         ],
                         customColumns: [],
                         columnSettings: { order: DEFAULT_COLUMN_DEFS.map(c => c.key) },
@@ -2342,6 +2080,166 @@
                     });
                     if (data.activityLog.length > 100) data.activityLog = data.activityLog.slice(0, 100);
                     this.saveData(data);
+                },
+
+                // ============================================================
+                // CSV FUNCTIONS
+                // ============================================================
+                csvEscape(val) {
+                    const s = (val === undefined || val === null) ? '' : String(val);
+                    if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+                    return s;
+                },
+
+                branchesToCSV(data) {
+                    const customCols = data.customColumns || [];
+                    const headers = [...CSV_FIXED_COLUMNS, ...customCols.map(c => `custom_${c.id}`)];
+                    const lines = [headers.join(',')];
+                    data.branches.forEach(b => {
+                        const row = CSV_FIXED_COLUMNS.map(k => this.csvEscape(b[k]));
+                        customCols.forEach(c => row.push(this.csvEscape(b.custom ? b.custom[c.id] : '')));
+                        lines.push(row.join(','));
+                    });
+                    return lines.join('\r\n');
+                },
+
+                parseCSV(text) {
+                    const rows = [];
+                    let row = [],
+                        field = '',
+                        inQuotes = false;
+                    for (let i = 0; i < text.length; i++) {
+                        const c = text[i];
+                        if (inQuotes) {
+                            if (c === '"') {
+                                if (text[i + 1] === '"') { field += '"'; i++; } else inQuotes = false;
+                            } else field += c;
+                        } else {
+                            if (c === '"') inQuotes = true;
+                            else if (c === ',') { row.push(field);
+                                field = ''; } else if (c === '\n') { row.push(field);
+                                rows.push(row);
+                                row = [];
+                                field = ''; } else if (c === '\r') { /* ignorar */ } else field += c;
+                        }
+                    }
+                    if (field.length || row.length) { row.push(field);
+                        rows.push(row); }
+                    return rows.filter(r => r.length > 1 || (r.length === 1 && r[0] !== ''));
+                },
+
+                csvToBranches(text, existingData) {
+                    const rows = this.parseCSV(text);
+                    if (rows.length < 1) return [];
+                    const headers = rows[0];
+                    const customCols = existingData.customColumns || [];
+                    return rows.slice(1).map(cols => {
+                        const b = { custom: {} };
+                        headers.forEach((h, i) => {
+                            const val = cols[i] !== undefined ? cols[i] : '';
+                            if (h.startsWith('custom_')) {
+                                b.custom[h.replace('custom_', '')] = val;
+                            } else {
+                                b[h] = val;
+                            }
+                        });
+                        if (!b.id) b.id = this.generateId();
+                        return b;
+                    });
+                },
+
+                // ============================================================
+                // CSV FILE HANDLING (IndexedDB para persistir handle)
+                // ============================================================
+                csvFileHandle: null,
+                csvSyncTimeout: null,
+
+                idbOpen() {
+                    return new Promise((resolve, reject) => {
+                        const req = indexedDB.open('fexPharmacyFiles', 1);
+                        req.onupgradeneeded = () => req.result.createObjectStore('handles');
+                        req.onsuccess = () => resolve(req.result);
+                        req.onerror = () => reject(req.error);
+                    });
+                },
+
+                async idbSetHandle(handle) {
+                    const db = await this.idbOpen();
+                    return new Promise((resolve, reject) => {
+                        const tx = db.transaction('handles', 'readwrite');
+                        tx.objectStore('handles').put(handle, 'sucursalesCsv');
+                        tx.oncomplete = () => resolve();
+                        tx.onerror = () => reject(tx.error);
+                    });
+                },
+
+                async idbGetHandle() {
+                    const db = await this.idbOpen();
+                    return new Promise((resolve, reject) => {
+                        const tx = db.transaction('handles', 'readonly');
+                        const req = tx.objectStore('handles').get('sucursalesCsv');
+                        req.onsuccess = () => resolve(req.result || null);
+                        req.onerror = () => reject(req.error);
+                    });
+                },
+
+                async readCsvIntoApp(handle, opts = {}) {
+                    const file = await handle.getFile();
+                    const text = await file.text();
+                    const data = this.getData();
+                    data.branches = this.csvToBranches(text, data);
+                    this.saveData(data);
+                    UIManager.renderAll();
+                    if (!opts.silent) {
+                        UIManager.showNotification('CSV vinculado', `Se cargaron ${data.branches.length} sucursales desde "${handle.name}".`, 'success');
+                    }
+                },
+
+                async syncCsvFileIfLinked(data) {
+                    if (!this.csvFileHandle) return;
+                    clearTimeout(this.csvSyncTimeout);
+                    this.csvSyncTimeout = setTimeout(async () => {
+                        try {
+                            const writable = await this.csvFileHandle.createWritable();
+                            await writable.write(this.branchesToCSV(data));
+                            await writable.close();
+                        } catch (err) {
+                            console.error('No se pudo escribir el CSV local:', err);
+                        }
+                    }, 400);
+                },
+
+                async tryAutoReconnectCsv() {
+                    if (!('showOpenFilePicker' in window)) { UIManager.updateCsvStatusUI(); return; }
+                    try {
+                        const handle = await this.idbGetHandle();
+                        if (!handle) { UIManager.updateCsvStatusUI(); return; }
+                        const perm = await handle.queryPermission({ mode: 'readwrite' });
+                        if (perm === 'granted') {
+                            this.csvFileHandle = handle;
+                            await this.readCsvIntoApp(handle, { silent: true });
+                        } else {
+                            this.csvFileHandle = null;
+                            window.__csvPendingHandle = handle;
+                        }
+                    } catch (err) { console.error(err); }
+                    UIManager.updateCsvStatusUI();
+                },
+
+                async reconnectCsvFile() {
+                    const handle = window.__csvPendingHandle;
+                    if (!handle) return UIManager.linkCsvFile();
+                    try {
+                        const perm = await handle.requestPermission({ mode: 'readwrite' });
+                        if (perm === 'granted') {
+                            this.csvFileHandle = handle;
+                            window.__csvPendingHandle = null;
+                            await this.readCsvIntoApp(handle, { silent: false });
+                            UIManager.updateCsvStatusUI();
+                        } else {
+                            UIManager.showNotification('Permiso denegado', 'No se otorgó permiso sobre el archivo.', 'error');
+                        }
+                    } catch (err) { console.error(err); }
                 }
             };
 
@@ -3083,16 +2981,24 @@
                 // ============================================================
                 // CSV STATUS UI
                 // ============================================================
-                updateDbStatusUI() {
-                    const el = document.getElementById('dbStatus');
+                updateCsvStatusUI() {
+                    const el = document.getElementById('csvStatus');
                     if (!el) return;
-                    if (!DataManager.dbReady) {
+                    const hasSupport = 'showOpenFilePicker' in window;
+                    const handle = DataManager.csvFileHandle;
+                    if (!hasSupport) {
                         el.innerHTML =
-                            `<span class="text-muted"><i class="fas fa-spinner fa-spin me-1"></i>Inicializando base de datos SQLite...</span>`;
-                        return;
+                            `<span class="text-muted"><i class="fas fa-exclamation-triangle me-1"></i>Tu navegador no soporta vincular archivos locales. Usa exportar/importar CSV.</span>`;
+                    } else if (handle) {
+                        el.innerHTML =
+                            `<span class="text-success"><i class="fas fa-check-circle me-1"></i>Vinculado a "${handle.name}". Se lee y actualiza automáticamente.</span>`;
+                    } else if (window.__csvPendingHandle) {
+                        el.innerHTML =
+                            `<span class="text-warning"><i class="fas fa-link me-1"></i>Archivo vinculado anteriormente. <button class="btn btn-sm btn-outline-warning ms-2" onclick="window.reconnectCsvFile()">Reconectar</button></span>`;
+                    } else {
+                        el.innerHTML =
+                            `<span class="text-muted"><i class="fas fa-unlink me-1"></i>Ningún archivo CSV vinculado todavía.</span>`;
                     }
-                    el.innerHTML =
-                        `<span class="text-success"><i class="fas fa-database me-1"></i>Base de datos SQLite lista. Usa sucursales.db si está disponible o memoria local en su defecto.</span>`;
                 },
 
                 // ============================================================
@@ -3837,46 +3743,77 @@
                 UIManager.showNotification('Correo', `Se abrirá su cliente de correo para enviar a ${email}`, 'info');
             };
 
-            // SQLite DB handlers
-            window.reloadSqliteDatabase = async function() {
-                await DataManager.reloadSqliteDatabase();
-                DataManager.getData();
-                UIManager.renderAll();
-                UIManager.showNotification('DB recargada', 'Base de datos SQLite recargada correctamente.', 'success');
-            };
-
-            window.exportSqliteDb = function() {
-                const bytes = DataManager.exportSqliteDatabase();
-                if (!bytes) {
-                    UIManager.showNotification('Error', 'No hay base de datos SQLite disponible para exportar.', 'error');
+            // CSV
+            window.linkCsvFile = async function() {
+                if (!('showOpenFilePicker' in window)) {
+                    UIManager.showNotification('No disponible',
+                        'Tu navegador no soporta vincular archivos locales. Usa Exportar/Importar CSV manualmente.',
+                        'warning');
                     return;
                 }
-                const blob = new Blob([bytes], { type: 'application/octet-stream' });
+                try {
+                    const [handle] = await window.showOpenFilePicker({
+                        types: [{ description: 'CSV', accept: { 'text/csv': ['.csv'] } }],
+                        excludeAcceptAllOption: false,
+                        multiple: false
+                    });
+                    const perm = await handle.requestPermission({ mode: 'readwrite' });
+                    if (perm !== 'granted') {
+                        UIManager.showNotification('Permiso denegado', 'No se otorgó permiso de lectura/escritura sobre el archivo.',
+                            'error');
+                        return;
+                    }
+                    DataManager.csvFileHandle = handle;
+                    await DataManager.idbSetHandle(handle);
+                    await DataManager.readCsvIntoApp(handle, { silent: false });
+                    UIManager.updateCsvStatusUI();
+                } catch (err) {
+                    if (err.name !== 'AbortError') {
+                        console.error(err);
+                        UIManager.showNotification('Error', 'No se pudo vincular el archivo CSV.', 'error');
+                    }
+                }
+            };
+            window.syncFromCsvNow = async function() {
+                if (!DataManager.csvFileHandle) {
+                    UIManager.showNotification('Sin vincular', 'Primero vincula un archivo CSV.', 'warning');
+                    return;
+                }
+                try {
+                    await DataManager.readCsvIntoApp(DataManager.csvFileHandle, { silent: false });
+                } catch (err) {
+                    console.error(err);
+                    UIManager.showNotification('Error', 'No se pudo leer el archivo CSV vinculado.', 'error');
+                }
+            };
+            window.reconnectCsvFile = DataManager.reconnectCsvFile.bind(DataManager);
+            window.exportBranchesCSV = function() {
+                const data = DataManager.getData();
+                const blob = new Blob([DataManager.branchesToCSV(data)], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = SQLITE_DB_FILE;
+                a.download = 'sucursales.csv';
                 a.click();
                 URL.revokeObjectURL(url);
-                UIManager.showNotification('DB exportada', 'La base de datos SQLite se ha descargado.', 'success');
+                UIManager.showNotification('CSV exportado', 'El archivo sucursales.csv se ha descargado.', 'success');
             };
-
-            window.importSqliteDb = async function(event) {
+            window.importBranchesCSV = function(event) {
                 const file = event.target.files[0];
                 if (!file) return;
-                try {
-                    const buffer = await file.arrayBuffer();
-                    const ok = DataManager.importSqliteDatabase(buffer);
-                    if (ok) {
-                        UIManager.renderAll();
-                        UIManager.showNotification('DB importada', 'La base de datos SQLite se cargó correctamente.', 'success');
-                    } else {
-                        UIManager.showNotification('Error', 'No se pudo importar la base de datos SQLite.', 'error');
-                    }
-                } catch (err) {
-                    console.error(err);
-                    UIManager.showNotification('Error', 'No se pudo leer el archivo de base de datos.', 'error');
-                }
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    if (!confirm(
+                            'Esto reemplazará el listado de sucursales actual con el contenido del CSV. ¿Continuar?')
+                        ) return;
+                    const data = DataManager.getData();
+                    data.branches = DataManager.csvToBranches(e.target.result, data);
+                    DataManager.saveData(data);
+                    UIManager.renderAll();
+                    UIManager.showNotification('CSV importado', 'Las sucursales se cargaron desde el archivo.',
+                        'success');
+                };
+                reader.readAsText(file);
                 event.target.value = '';
             };
 
@@ -3893,14 +3830,14 @@
             // ============================================================
             // EVENT LISTENERS
             // ============================================================
-            document.addEventListener('DOMContentLoaded', async function() {
+            document.addEventListener('DOMContentLoaded', function() {
                 // Inicializar tema
                 ThemeManager.init();
 
-                // Inicializar SQLite y cargar datos
-                await DataManager.initSqliteDatabase();
+                // Cargar datos y renderizar
                 DataManager.getData();
                 UIManager.renderAll();
+                DataManager.tryAutoReconnectCsv();
 
                 // Filtros con debounce
                 const debounce = (fn, delay) => {
