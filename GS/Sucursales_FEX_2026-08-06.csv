@@ -1,0 +1,2 @@
+id,branchId,name,provinceId,server,cc,ip,db,backups,externalDisk,dataReduction,emailValidation,ftp,s3,voxelLog,failOver,voxel,updateBox,bkConsecutivo,status,createdAt
+"b_1786029084162_8f1tu","3","Centro Histórico","p1","ST-CEHIST-SV-PS","3","192.168.22.204","FEXPharmacySoftRDPtoVtaSuc3","SI","SI","SI","SI","SI","SI","SI","SI","SI","SI","NO","active","2026-08-06T15:11:24.162Z"
