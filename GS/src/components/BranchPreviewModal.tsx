@@ -49,38 +49,38 @@ export const BranchPreviewModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="relative bg-slate-900 rounded-xl border border-slate-800 shadow-2xl max-w-2xl w-full flex flex-col overflow-hidden text-slate-200 transition-colors">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="relative bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-2xl w-full flex flex-col overflow-hidden text-slate-800 dark:text-slate-200 transition-colors">
         
         {/* Header */}
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900">
+        <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-900">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-lg">
+            <div className="p-2 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 rounded-lg">
               <Server className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-bold text-base text-white">
+                <h3 className="font-bold text-base text-slate-900 dark:text-white">
                   {previewBranch.name}
                 </h3>
                 {previewBranch.status === 'active' ? (
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 uppercase tracking-wider">
                     Activa
                   </span>
                 ) : (
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30 uppercase tracking-wider">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/30 uppercase tracking-wider">
                     Cerrada
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-400 font-mono">
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
                 ID: {previewBranch.branchId || '—'} | CC: {previewBranch.cc || '—'}
               </p>
             </div>
           </div>
           <button
             onClick={() => setPreviewBranch(null)}
-            className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-lg transition-colors"
+            className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -90,20 +90,20 @@ export const BranchPreviewModal: React.FC = () => {
         <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto">
           
           {/* Location & Server Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-950 p-3.5 rounded-xl border border-slate-800 text-xs font-mono">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-slate-50 dark:bg-slate-950 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-mono">
             
             <div>
               <span className="text-slate-500 block font-semibold mb-0.5 flex items-center gap-1 text-[11px]">
-                <MapPin className="w-3.5 h-3.5" /> Provincia
+                <MapPin className="w-3.5 h-3.5 text-slate-400" /> Provincia
               </span>
-              <span className="font-bold text-white text-xs">
+              <span className="font-bold text-slate-900 dark:text-white text-xs">
                 {province?.name || '—'}
               </span>
             </div>
 
             <div>
               <span className="text-slate-500 block font-semibold mb-0.5 flex items-center gap-1 text-[11px]">
-                <Activity className="w-3.5 h-3.5" /> Zona
+                <Activity className="w-3.5 h-3.5 text-slate-400" /> Zona
               </span>
               {zone ? (
                 <span
@@ -113,40 +113,40 @@ export const BranchPreviewModal: React.FC = () => {
                   {zone.name}
                 </span>
               ) : (
-                <span className="font-bold text-slate-500">Sin Zona</span>
+                <span className="font-bold text-slate-400">Sin Zona</span>
               )}
             </div>
 
             <div>
               <span className="text-slate-500 block font-semibold mb-0.5 flex items-center gap-1 text-[11px]">
-                <Server className="w-3.5 h-3.5" /> Host Servidor
+                <Server className="w-3.5 h-3.5 text-slate-400" /> Host Servidor
               </span>
-              <span className="font-mono font-bold text-white">
+              <span className="font-mono font-bold text-slate-900 dark:text-white">
                 {previewBranch.server || '—'}
               </span>
             </div>
 
             <div>
               <span className="text-slate-500 block font-semibold mb-0.5 text-[11px]">IP Local</span>
-              <span className="font-mono font-bold text-white">
+              <span className="font-mono font-bold text-slate-900 dark:text-white">
                 {previewBranch.ip || '—'}
               </span>
             </div>
 
             <div className="col-span-2 sm:col-span-2">
               <span className="text-slate-500 block font-semibold mb-0.5 flex items-center gap-1 text-[11px]">
-                <Database className="w-3.5 h-3.5" /> Base de Datos
+                <Database className="w-3.5 h-3.5 text-slate-400" /> Base de Datos
               </span>
-              <span className="font-mono font-bold text-white truncate block">
+              <span className="font-mono font-bold text-slate-900 dark:text-white truncate block">
                 {previewBranch.db || '—'}
               </span>
             </div>
 
             <div>
               <span className="text-slate-500 block font-semibold mb-0.5 flex items-center gap-1 text-[11px]">
-                <Calendar className="w-3.5 h-3.5" /> Registrada
+                <Calendar className="w-3.5 h-3.5 text-slate-400" /> Registrada
               </span>
-              <span className="font-bold text-white">
+              <span className="font-bold text-slate-900 dark:text-white">
                 {previewBranch.createdAt ? new Date(previewBranch.createdAt).toLocaleDateString('es-DO') : '—'}
               </span>
             </div>
@@ -155,14 +155,14 @@ export const BranchPreviewModal: React.FC = () => {
 
           {/* Infrastructure Services Grid */}
           <div>
-            <h4 className="font-bold text-[10px] uppercase tracking-widest text-slate-400 mb-2.5 flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-indigo-400" />
+            <h4 className="font-bold text-[10px] uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2.5 flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
               Estado de Servicios e Infraestructura
             </h4>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {serviceBadges.map(item => (
-                <div key={item.label} className="flex items-center justify-between p-2 bg-slate-950 rounded-lg border border-slate-800 text-xs font-mono">
-                  <span className="font-semibold text-slate-400 text-[11px]">{item.label}</span>
+                <div key={item.label} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-mono">
+                  <span className="font-semibold text-slate-600 dark:text-slate-400 text-[11px]">{item.label}</span>
                   <span className={`px-2 py-0.5 rounded font-bold text-[10px] border ${getBadgeStyle(item.val)}`}>
                     {item.val || '—'}
                   </span>
@@ -174,14 +174,14 @@ export const BranchPreviewModal: React.FC = () => {
           {/* Custom Fields if any */}
           {customColumns.length > 0 && (
             <div>
-              <h4 className="font-bold text-[10px] uppercase tracking-widest text-slate-400 mb-2">
+              <h4 className="font-bold text-[10px] uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2">
                 Campos Personalizados
               </h4>
               <div className="grid grid-cols-2 gap-2.5">
                 {customColumns.map(col => (
-                  <div key={col.id} className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 text-xs font-mono">
+                  <div key={col.id} className="p-2.5 bg-slate-50 dark:bg-slate-950 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-mono">
                     <span className="text-slate-500 block font-semibold text-[11px]">{col.name}</span>
-                    <span className="font-bold text-slate-200">
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
                       {previewBranch.custom?.[col.id] || col.defaultValue || '—'}
                     </span>
                   </div>
@@ -193,10 +193,10 @@ export const BranchPreviewModal: React.FC = () => {
         </div>
 
         {/* Footer */}
-        <div className="p-3 border-t border-slate-800 flex items-center justify-between bg-slate-900">
+        <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-900">
           <button
             onClick={() => setPreviewBranch(null)}
-            className="px-3.5 py-1.5 rounded-lg text-xs font-bold text-slate-400 hover:bg-slate-800 uppercase tracking-wider transition-colors"
+            className="px-3.5 py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 uppercase tracking-wider transition-colors"
           >
             Cerrar
           </button>

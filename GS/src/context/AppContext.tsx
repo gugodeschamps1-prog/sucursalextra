@@ -1,10 +1,48 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Branch, Zone, Province, CustomColumn, ColumnSetting, AuditLog, PushNotificationItem, AppFilters } from '../types';
 import { DEFAULT_ZONES, DEFAULT_PROVINCES, DEFAULT_BRANCHES, DEFAULT_COLUMN_DEFS, SERVICE_KEYS } from '../lib/initialData';
 import { requestFCMToken, onForegroundMessage } from '../lib/firebase';
 
 const LOCAL_STORAGE_KEY = 'fex_pharmacy_data_v2';
 const LOCAL_FILTERS_KEY = 'fex_pharmacy_filters_v2';
+
+// Helper to store FileSystemFileHandle in IndexedDB for auto CSV saving across reloads
+const storeHandleInIDB = async (handle: any) => {
+  try {
+    const request = indexedDB.open('FexPharmacyCsvDB', 1);
+    request.onupgradeneeded = (e: any) => {
+      e.target.result.createObjectStore('handles');
+    };
+    request.onsuccess = (e: any) => {
+      const db = e.target.result;
+      const tx = db.transaction('handles', 'readwrite');
+      tx.objectStore('handles').put(handle, 'linked_csv_file');
+    };
+  } catch (err) {
+    console.error('Error saving handle to IndexedDB:', err);
+  }
+};
+
+const getHandleFromIDB = async (): Promise<any> => {
+  return new Promise((resolve) => {
+    try {
+      const request = indexedDB.open('FexPharmacyCsvDB', 1);
+      request.onupgradeneeded = (e: any) => {
+        e.target.result.createObjectStore('handles');
+      };
+      request.onsuccess = (e: any) => {
+        const db = e.target.result;
+        const tx = db.transaction('handles', 'readonly');
+        const getReq = tx.objectStore('handles').get('linked_csv_file');
+        getReq.onsuccess = () => resolve(getReq.result || null);
+        getReq.onerror = () => resolve(null);
+      };
+      request.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+};
 
 interface AppContextType {
   darkMode: boolean;
@@ -77,9 +115,10 @@ interface AppContextType {
   markNotificationRead: (id: string) => void;
   clearAllNotifications: () => void;
 
-  // File System Access CSV Linking
+  // File System Access CSV Linking & Auto-Save
   linkedCsvHandleName: string | null;
   linkLocalCsvFile: () => Promise<void>;
+  createAndLinkCsvFile: () => Promise<void>;
   syncWithLinkedCsvNow: () => Promise<void>;
 }
 
@@ -391,6 +430,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setBranches(updatedBranches);
     persistState({ branches: updatedBranches });
+    saveToLinkedCsvFile(updatedBranches);
     return { success: true, message: 'Guardado exitosamente' };
   };
 
@@ -401,6 +441,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updated = branches.map(b => b.id === id ? { ...b, status: newStatus } : b);
     setBranches(updated);
     persistState({ branches: updated });
+    saveToLinkedCsvFile(updated);
     logAuditAction('Cambio de Estado', `Sucursal "${target.name}" cambió a estado ${newStatus === 'active' ? 'ACTIVA' : 'CERRADA'}.`);
     showToast('Estado Cambiado', `Sucursal "${target.name}" ahora está ${newStatus === 'active' ? 'activa' : 'cerrada'}.`, 'info');
   };
@@ -411,6 +452,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updated = branches.filter(b => b.id !== id);
     setBranches(updated);
     persistState({ branches: updated });
+    saveToLinkedCsvFile(updated);
     logAuditAction('Eliminación de Sucursal', `Sucursal "${target.name}" (#${target.branchId || 'N/A'}) eliminada.`);
     showToast('Sucursal Eliminada', `"${target.name}" fue eliminada del sistema.`, 'warning');
   };
@@ -436,6 +478,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setBranches(updated);
     persistState({ branches: updated });
+    saveToLinkedCsvFile(updated);
     logAuditAction('Configuración Masiva de Servicios', `Se aplicaron los servicios de "${source.name}" a las ${branches.length} sucursales.`);
     showToast('Servicios Aplicados Masivamente', `Configuración de servicios copiada a todas las sucursales.`, 'success');
   };
@@ -744,12 +787,70 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Notificaciones Limpiadas', 'Bandeja de alertas vaciada.', 'info');
   };
 
-  // 9. File System Access API CSV Binding
+  // 9. File System Access API CSV Binding & Real-Time Auto-Save
+  const csvFileHandleRef = useRef<any>(null);
   const [linkedCsvHandleName, setLinkedCsvHandleName] = useState<string | null>(null);
+
+  // Restore stored handle on app launch
+  useEffect(() => {
+    getHandleFromIDB().then(handle => {
+      if (handle) {
+        csvFileHandleRef.current = handle;
+        setLinkedCsvHandleName(handle.name);
+      }
+    });
+  }, []);
+
+  const generateCSVData = useCallback((branchList: Branch[]) => {
+    const headers = ['id', 'branchId', 'name', 'provinceId', 'server', 'cc', 'ip', 'db', ...SERVICE_KEYS, 'status', 'createdAt'];
+    const lines = [headers.join(',')];
+
+    branchList.forEach(b => {
+      const row = [
+        `"${b.id}"`,
+        `"${b.branchId || ''}"`,
+        `"${b.name.replace(/"/g, '""')}"`,
+        `"${b.provinceId}"`,
+        `"${b.server}"`,
+        `"${b.cc}"`,
+        `"${b.ip}"`,
+        `"${b.db}"`,
+        ...SERVICE_KEYS.map(k => `"${b[k] || ''}"`),
+        `"${b.status}"`,
+        `"${b.createdAt}"`
+      ];
+      lines.push(row.join(','));
+    });
+
+    return lines.join('\r\n');
+  }, []);
+
+  const saveToLinkedCsvFile = useCallback(async (currentBranches: Branch[]) => {
+    if (!csvFileHandleRef.current) return;
+    try {
+      const handle = csvFileHandleRef.current;
+      let perm = 'granted';
+      if (typeof handle.queryPermission === 'function') {
+        perm = await handle.queryPermission({ mode: 'readwrite' });
+        if (perm !== 'granted' && typeof handle.requestPermission === 'function') {
+          perm = await handle.requestPermission({ mode: 'readwrite' });
+        }
+      }
+      if (perm === 'granted') {
+        const writable = await handle.createWritable();
+        const csvContent = generateCSVData(currentBranches);
+        await writable.write(csvContent);
+        await writable.close();
+        showToast('CSV Auto-guardado', `Cambios sincronizados automáticamente en "${handle.name}".`, 'success');
+      }
+    } catch (e: any) {
+      console.error("Error auto-saving to CSV:", e);
+    }
+  }, [generateCSVData, showToast]);
 
   const linkLocalCsvFile = async () => {
     if (!('showOpenFilePicker' in window)) {
-      showToast('No Compatible', 'Su navegador no soporta el File System Access API. Use exportar/importar CSV.', 'warning');
+      showToast('No Compatible', 'Su navegador no soporta File System Access API. Use exportar/importar CSV.', 'warning');
       return;
     }
     try {
@@ -757,11 +858,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         types: [{ description: 'Archivo CSV', accept: { 'text/csv': ['.csv'] } }],
         multiple: false
       });
+      csvFileHandleRef.current = handle;
+      setLinkedCsvHandleName(handle.name);
+      await storeHandleInIDB(handle);
+
       const file = await handle.getFile();
       const text = await file.text();
-      setLinkedCsvHandleName(file.name);
-      importCSV(text);
-      showToast('CSV Vinculado', `Vinculado localmente con "${file.name}".`, 'success');
+      if (text && text.trim().length > 0) {
+        importCSV(text);
+      } else {
+        await saveToLinkedCsvFile(branches);
+      }
+      showToast('CSV Vinculado', `Auto-guardado automático activado para "${handle.name}".`, 'success');
     } catch (e: any) {
       if (e.name !== 'AbortError') {
         showToast('Error', 'No se pudo acceder al archivo seleccionado.', 'error');
@@ -769,12 +877,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const createAndLinkCsvFile = async () => {
+    if (!('showSaveFilePicker' in window)) {
+      showToast('No Compatible', 'Su navegador no soporta File System Access API.', 'warning');
+      return;
+    }
+    try {
+      const handle = await (window as any).showSaveFilePicker({
+        suggestedName: `sucursales_fex_${new Date().toISOString().slice(0, 10)}.csv`,
+        types: [{ description: 'Archivo CSV', accept: { 'text/csv': ['.csv'] } }]
+      });
+      csvFileHandleRef.current = handle;
+      setLinkedCsvHandleName(handle.name);
+      await storeHandleInIDB(handle);
+      await saveToLinkedCsvFile(branches);
+      showToast('CSV Creado y Vinculado', `Sincronización automática activa en "${handle.name}".`, 'success');
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        showToast('Error', 'No se pudo crear el archivo CSV.', 'error');
+      }
+    }
+  };
+
   const syncWithLinkedCsvNow = async () => {
-    if (!linkedCsvHandleName) {
+    if (!linkedCsvHandleName || !csvFileHandleRef.current) {
       showToast('Sin Archivo', 'No hay ningún archivo CSV vinculado en esta sesión.', 'warning');
       return;
     }
-    showToast('Sincronizando CSV', 'Releyendo base de datos local...', 'info');
+    await saveToLinkedCsvFile(branches);
   };
 
   return (
@@ -842,6 +972,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       linkedCsvHandleName,
       linkLocalCsvFile,
+      createAndLinkCsvFile,
       syncWithLinkedCsvNow
     }}>
       {children}

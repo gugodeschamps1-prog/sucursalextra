@@ -34,7 +34,7 @@ const MainContent: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 flex flex-col selection:bg-indigo-500 selection:text-white transition-colors duration-200 font-sans">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 flex flex-col selection:bg-indigo-500 selection:text-white transition-colors duration-200 font-sans">
       
       {/* Desktop Sidebar & Mobile Drawer */}
       <Sidebar
