@@ -1,0 +1,6 @@
+{
+  "name": "Gestión de Sucursales - FEX Pharmacy",
+  "description": "Sistema PWA responsivo para la gestión de sucursales, zonas, estadísticas, reportes en PDF/Excel, notificaciones y sincronización offline.",
+  "requestFramePermissions": ["notifications"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
